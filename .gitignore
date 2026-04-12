@@ -1,0 +1,15 @@
+Debug/
+Release/
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+.metadata/
+.settings/
+RemoteSystemsTempFiles/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
