@@ -34,7 +34,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define ArUcoMarker_RxBuf_SIZE		19
+#define ArUcoMarker_MainBuf_SIZE	40
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -46,10 +47,13 @@
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN PV */
-uint8_t aruco_marker_data[21];
-float agv_x, agv_y, agv_yaw;
+uint8_t ArUcoMarker_RxBuf[ArUcoMarker_RxBuf_SIZE];
+uint8_t ArUcoMarker_MainBuf[ArUcoMarker_MainBuf_SIZE];
+uint8_t old_pos, new_pos;
+int agv_x, agv_y, agv_yaw;
 
 uint8_t usart2_flag = 0;
 /* USER CODE END PV */
@@ -58,6 +62,7 @@ uint8_t usart2_flag = 0;
 void SystemClock_Config(void);
 static void MPU_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
@@ -70,6 +75,21 @@ int _write(int file, char *ptr, int len)
 {
     HAL_UART_Transmit(&huart3, (uint8_t*) ptr, len, HAL_MAX_DELAY);
     return len;
+}
+
+int ArUcoMarker_Data_Parsing(const uint8_t* buf)
+{
+	int data = 0;
+
+	if (buf[0] == '+' || buf[0] == '-')
+	{
+		data = (buf[1] - '0') * 1000 + (buf[2] - '0') * 100
+				+ (buf[3] - '0') * 10 + (buf[4] - '0');
+
+		if (buf[0] == '-') data *= -1;
+	}
+
+	return data;
 }
 /* USER CODE END 0 */
 
@@ -105,10 +125,12 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart2, aruco_marker_data, 21);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, ArUcoMarker_RxBuf, ArUcoMarker_RxBuf_SIZE);
+  __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -119,15 +141,14 @@ int main(void)
 	  {
 		  usart2_flag = 0;
 
-		  printf("%s\r\n", (char*)aruco_marker_data);
+		  printf("%s\r\n", ArUcoMarker_RxBuf);
 
-		  agv_x = atof((char*)&aruco_marker_data[0]);
-		  agv_y = atof((char*)&aruco_marker_data[7]);
-		  agv_yaw = atof((char*)&aruco_marker_data[14]);
-		  printf("agv_x = %06.1f, agv_y = %06.1f, agv_yaw = %06.1f\r\n\n"
+		  agv_x = ArUcoMarker_Data_Parsing(&ArUcoMarker_RxBuf[1]);
+		  agv_y = ArUcoMarker_Data_Parsing(&ArUcoMarker_RxBuf[7]);
+		  agv_yaw = ArUcoMarker_Data_Parsing(&ArUcoMarker_RxBuf[13]);
+
+		  printf("agv_x = %d, agv_y = %d, agv_yaw = %d\r\n"
 				  , agv_x, agv_y, agv_yaw);
-
-		  HAL_UART_Receive_IT(&huart2, aruco_marker_data, 21);
 	  }
     /* USER CODE END WHILE */
 
@@ -264,6 +285,22 @@ static void MX_USART3_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -304,11 +341,20 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 	if (huart->Instance == USART2)
 	{
-		usart2_flag = 1;
+		if (Size == ArUcoMarker_RxBuf_SIZE && ArUcoMarker_RxBuf[0] == '<' && ArUcoMarker_RxBuf[18] == '>')
+		{
+			usart2_flag = 1;
+		}
+		else
+		{
+			HAL_UART_DMAStop(&huart2);
+			HAL_UARTEx_ReceiveToIdle_DMA(&huart2, ArUcoMarker_RxBuf, ArUcoMarker_RxBuf_SIZE);
+			__HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
+		}
 	}
 }
 
@@ -316,8 +362,13 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
-        printf("Error Occurred!\r\n");
-		printf("ISR: %08lx\r\n", USART2->ISR);
+    	__HAL_UART_CLEAR_OREFLAG(huart);
+    	__HAL_UART_CLEAR_NEFLAG(huart);
+    	__HAL_UART_CLEAR_FEFLAG(huart);
+
+		HAL_UART_DMAStop(&huart2);
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, ArUcoMarker_RxBuf, ArUcoMarker_RxBuf_SIZE);
+		__HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
     }
 }
 /* USER CODE END 4 */
