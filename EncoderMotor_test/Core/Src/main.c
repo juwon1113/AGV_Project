@@ -142,8 +142,9 @@ void AGV_Forward(uint16_t basePwm, float target)
 		SPEED_PID_Control(basePwm, target);
 	}
 
-	if (print_flag == 10)
+	if (print_flag >= 10)
 	{
+		print_flag = 0;
 		printf("EncoderL_CurrCount: %d, EncoderR_CurrCount: %d\r\n", EncoderL_CurrCount, EncoderR_CurrCount);
 		printf("EncoderL_DiffCount: %d, EncoderR_DiffCount: %d\r\n", EncoderL_DiffCount, EncoderR_DiffCount);
 		printf("MotorL_Speed: %d, MotorR_Speed: %d\r\n\n", MotorL_Speed, MotorR_Speed);
@@ -168,8 +169,9 @@ void AGV_ROTATE_LEFT(uint16_t basePwm, float target)
 		SPEED_PID_Control(basePwm, target);
 	}
 
-	if (print_flag == 10)
+	if (print_flag >= 10)
 	{
+		print_flag = 0;
 		printf("EncoderL_CurrCount: %d, EncoderR_CurrCount: %d\r\n", EncoderL_CurrCount, EncoderR_CurrCount);
 		printf("EncoderL_DiffCount: %d, EncoderR_DiffCount: %d\r\n", EncoderL_DiffCount, EncoderR_DiffCount);
 		printf("MotorL_Speed: %d, MotorR_Speed: %d\r\n\n", MotorL_Speed, MotorR_Speed);
@@ -188,8 +190,9 @@ void AGV_ROTATE_RIGHT(uint16_t basePwm, float target)
 		SPEED_PID_Control(basePwm, target);
 	}
 
-	if (print_flag == 10)
+	if (print_flag >= 10)
 	{
+		print_flag = 0;
 		printf("EncoderL_CurrCount: %d, EncoderR_CurrCount: %d\r\n", EncoderL_CurrCount, EncoderR_CurrCount);
 		printf("EncoderL_DiffCount: %d, EncoderR_DiffCount: %d\r\n", EncoderL_DiffCount, EncoderR_DiffCount);
 		printf("MotorL_Speed: %d, MotorR_Speed: %d\r\n\n", MotorL_Speed, MotorR_Speed);
@@ -208,8 +211,9 @@ void AGV_ROTATE_180(uint16_t basePwm, float target)
 		SPEED_PID_Control(basePwm, target);
 	}
 
-	if (print_flag == 10)
+	if (print_flag >= 10)
 	{
+		print_flag = 0;
 		printf("EncoderL_CurrCount: %d, EncoderR_CurrCount: %d\r\n", EncoderL_CurrCount, EncoderR_CurrCount);
 		printf("EncoderL_DiffCount: %d, EncoderR_DiffCount: %d\r\n", EncoderL_DiffCount, EncoderR_DiffCount);
 		printf("MotorL_Speed: %d, MotorR_Speed: %d\r\n\n", MotorL_Speed, MotorR_Speed);

@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define CALIB_ADDR  ((uint32_t)0x081C0000)   // Sector 11 시작 (단일뱅크 F767)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -78,6 +78,35 @@ int _write(int file, char *ptr, int len)
     HAL_UART_Transmit(&huart3, (uint8_t*) ptr, len, HAL_MAX_DELAY);
     return len;
 }
+
+// 캘리브레이션 22바이트를 Flash에 저장
+void Calib_Save(uint8_t *offset)   // getSensorOffsets()로 받은 22바이트
+{
+    HAL_FLASH_Unlock();
+
+    FLASH_EraseInitTypeDef erase;
+    uint32_t err = 0;
+    erase.TypeErase    = FLASH_TYPEERASE_SECTORS;
+    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+    erase.Sector       = FLASH_SECTOR_11;
+    erase.NbSectors    = 1;
+    HAL_FLASHEx_Erase(&erase, &err);
+
+    // 22바이트를 1바이트씩 써넣음 (F767은 바이트 쓰기 지원)
+    for (int i = 0; i < 22; i++) {
+        HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, CALIB_ADDR + i, offset[i]);
+    }
+
+    HAL_FLASH_Lock();
+}
+
+// Flash에서 캘리브레이션 22바이트를 읽음
+void Calib_Load(uint8_t *offset)
+{
+    for (int i = 0; i < 22; i++) {
+        offset[i] = *(uint8_t *)(CALIB_ADDR + i);   // Flash는 주소로 직접 읽기
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -115,8 +144,41 @@ int main(void)
   MX_I2C1_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  /* USER CODE BEGIN 2 */
+  uint8_t offset[22];
+
+  printf("--- BNO055 Calibration Tool Start ---\r\n");
+
+  // 1. 센서 초기화
   BNO055_Init(bno055_init);
-  Calibrate_BNO055();
+  printf("Please move the sensor (figure 8, rotate, etc)...\r\n");
+
+  // 2. 캘리브레이션이 완료될 때까지 대기 (while 루프 활용)
+  // Calibrate_BNO055() 함수가 내부적으로 센서 상태(Sys, Gyro, Accel, Mag)가
+  // 모두 3(Fully Calibrated)이 될 때까지 기다리거나, 상태를 반환한다고 가정합니다.
+  while (!Calibrate_BNO055()) {
+      // (선택) 진행 중임을 알리는 LED 깜빡임
+      HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+      HAL_Delay(100);
+  }
+
+  // 3. 캘리브레이션 성공 시, 오프셋 읽기 및 플래시 저장
+  printf("Calibration Success! Saving to Flash...\r\n");
+  getSensorOffsets(offset);
+  Calib_Save(offset);
+
+  // 4. (검증 단계) 플래시에서 다시 읽어와서 제대로 써졌는지 확인
+  uint8_t verify_offset[22];
+  Calib_Load(verify_offset);
+
+  if (verify_offset[0] == offset[0]) { // 간단한 검증
+      printf("Flash Save Verified! Done.\r\n");
+  } else {
+      printf("Flash Save Failed...\r\n");
+  }
+
+  printf("You can now flash the Main Application.\r\n");
+    /* USER CODE END 2 */
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -125,6 +187,7 @@ int main(void)
   {
 	  ReadData(&bno055_sensor_data, SENSOR_EULER);
 	  agv_yaw = bno055_sensor_data.Euler.X;
+
 	  printf("yaw = %4.1fdeg\r\n", agv_yaw);
 	  HAL_Delay(100);
     /* USER CODE END WHILE */

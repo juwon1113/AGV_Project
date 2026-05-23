@@ -34,8 +34,20 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* ── 수신 명령 코드 (RPi → STM32) ── */
+#define CMD_FORWARD       0x01
+#define CMD_STOP          0x02
+#define CMD_LIFT_UP       0x03
+#define CMD_LIFT_DOWN     0x04
+#define CMD_ROTATE_LEFT   0x05
+#define CMD_ROTATE_RIGHT  0x06
+#define CMD_ROTATE_180    0x07
+
+/* ── 송신 이벤트 코드 (STM32 → RPi) ── */
+#define EVT_DONE  0x81  /* 동작 완료 (forward 제외 — ArUco로 감지) */
+#define EVT_ACK   0xFF  /* 명령 수신 확인 */
+
 #define ArUcoMarker_RxBuf_SIZE		19
-#define ArUcoMarker_MainBuf_SIZE	40
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,12 +62,12 @@ UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN PV */
+uint8_t command;
 uint8_t ArUcoMarker_RxBuf[ArUcoMarker_RxBuf_SIZE];
-uint8_t ArUcoMarker_MainBuf[ArUcoMarker_MainBuf_SIZE];
-uint8_t old_pos, new_pos;
 int agv_x, agv_y, agv_yaw;
 
-uint8_t usart2_flag = 0;
+uint8_t usart2_it_flag = 0;
+uint8_t usart2_dma_flag = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -129,6 +141,8 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  HAL_UART_Receive_IT(&huart2, command, 1);
+
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, ArUcoMarker_RxBuf, ArUcoMarker_RxBuf_SIZE);
   __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
   /* USER CODE END 2 */
@@ -137,9 +151,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (usart2_flag)
+	  if (usart2_it_flag)
 	  {
-		  usart2_flag = 0;
+		  usart2_it_flag = 0;
+		  printf("command = %d\r\n", command);
+	  }
+	  if (usart2_dma_flag)
+	  {
+		  usart2_dma_flag = 0;
 
 		  printf("%s\r\n", ArUcoMarker_RxBuf);
 
@@ -341,13 +360,27 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == USART2)
+	{
+		usart_it_flag = 1;
+		HAL_UART_Receive_IT(&huart2, &command, 1);
+	}
+
+	if (huart->Instance == USART3)
+	{
+		HAL_UART_Receive_IT(&huart3, &command, 1);
+	}
+}
+
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 	if (huart->Instance == USART2)
 	{
 		if (Size == ArUcoMarker_RxBuf_SIZE && ArUcoMarker_RxBuf[0] == '<' && ArUcoMarker_RxBuf[18] == '>')
 		{
-			usart2_flag = 1;
+			usart2_dma_flag = 1;
 		}
 		else
 		{
